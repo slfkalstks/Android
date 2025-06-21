@@ -197,11 +197,17 @@ class HomeFragment : Fragment() {
 
     private fun setupNoticesRecyclerView(notices: List<PostInfo>, board: BoardInfo) {
         val adapter = NoticeAdapter(notices) { post ->
-            // 공지사항 클릭 이벤트 처리
+            // 🔧 공지사항 클릭 시 댓글수도 함께 전달
             val intent = Intent(requireContext(), BoardActivity::class.java)
             intent.putExtra("board_type", board.type)
             intent.putExtra("post_id", post.postId)
             intent.putExtra("board_id", board.boardId)
+
+            // 🎯 추가: 댓글수와 조회수 전달
+            intent.putExtra("list_comment_count", post.commentCount)
+            intent.putExtra("list_view_count", post.viewCount)
+            intent.putExtra("has_list_data", true)
+
             startActivity(intent)
         }
 
@@ -222,11 +228,17 @@ class HomeFragment : Fragment() {
         binding.tvTipsTitle.text = board.name
 
         val adapter = TipAdapter(tips) { post ->
-            // 팁 클릭 이벤트 처리
+            // 🔧 팁 클릭 시 댓글수도 함께 전달
             val intent = Intent(requireContext(), BoardActivity::class.java)
             intent.putExtra("board_type", board.type)
             intent.putExtra("post_id", post.postId)
             intent.putExtra("board_id", board.boardId)
+
+            // 🎯 추가: 댓글수와 조회수 전달
+            intent.putExtra("list_comment_count", post.commentCount)
+            intent.putExtra("list_view_count", post.viewCount)
+            intent.putExtra("has_list_data", true)
+
             startActivity(intent)
         }
 

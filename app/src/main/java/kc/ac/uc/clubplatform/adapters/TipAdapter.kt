@@ -1,4 +1,3 @@
-// adapters/TipAdapter.kt
 package kc.ac.uc.clubplatform.adapters
 
 import android.view.LayoutInflater
@@ -6,6 +5,7 @@ import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import kc.ac.uc.clubplatform.databinding.ItemTipBinding
 import kc.ac.uc.clubplatform.models.PostInfo
+import kc.ac.uc.clubplatform.util.DateUtils  // 🔧 추가
 
 class TipAdapter(
     private val tips: List<PostInfo>,
@@ -34,9 +34,12 @@ class TipAdapter(
             binding.tvTitle.text = post.title
             binding.tvContent.text = post.content
             binding.tvAuthor.text = post.authorName
-            binding.tvDate.text = post.createdAt
-            binding.tvCommentCount.text = post.commentCount.toString()
-            binding.tvViewCount.text = post.viewCount.toString()
+
+            // 🔧 DateUtils 사용하여 yy:MM:dd HHmm 형식으로 변경
+            binding.tvDate.text = DateUtils.formatHomeDate(post.createdAt)
+
+            binding.tvCommentCount.text = maxOf(0, post.commentCount).toString()
+            binding.tvViewCount.text = maxOf(0, post.viewCount).toString()
 
             binding.root.setOnClickListener {
                 onItemClick(post)

@@ -17,6 +17,7 @@ import kc.ac.uc.clubplatform.adapters.CommentAdapter
 import kc.ac.uc.clubplatform.api.ApiClient
 import kc.ac.uc.clubplatform.models.PostInfo
 import kc.ac.uc.clubplatform.models.PostDetail
+import kc.ac.uc.clubplatform.util.DateUtils
 import kotlinx.coroutines.launch
 import io.noties.markwon.Markwon
 import android.util.Log
@@ -37,6 +38,9 @@ class BoardActivity : AppCompatActivity() {
     private var boardId: Int? = null
     private var clubId: Int = -1
     private var anonymousCounter = 0 // 익명 번호 카운터
+    private var listCommentCount: Int = -1  // 목록에서 받은 댓글수
+    private var listViewCount: Int = -1     // 목록에서 받은 조회수
+    private var hasListData: Boolean = false // 목록 데이터 존재 여부
     private val anonymousMap = mutableMapOf<String, String>() // userId -> 익명번호 매핑
     private val comments = mutableListOf<CommentInfo>()
     private lateinit var commentsAdapter: CommentAdapter
@@ -79,6 +83,12 @@ class BoardActivity : AppCompatActivity() {
         postId = intent.getIntExtra("post_id", -1).takeIf { it != -1 }
         boardId = intent.getIntExtra("board_id", -1).takeIf { it != -1 }
         clubId = intent.getIntExtra("club_id", -1)
+
+        listCommentCount = intent.getIntExtra("list_comment_count", -1)
+        listViewCount = intent.getIntExtra("list_view_count", -1)
+        hasListData = intent.getBooleanExtra("has_list_data", false)
+
+        Log.d("BoardActivity", "Intent 데이터: commentCount=$listCommentCount, viewCount=$listViewCount, hasData=$hasListData")
 
         // 현재 동아리 ID 가져오기
         if (clubId == -1) {
@@ -379,13 +389,19 @@ class BoardActivity : AppCompatActivity() {
         posts.addAll(postList)
 
         postAdapter = PostAdapter(posts) { post ->
-            // 게시글 클릭 시 상세 페이지로 이동
+            // 게시글 클릭 시 댓글수도 함께 전달
             val intent = Intent(this, BoardActivity::class.java)
             intent.putExtra("board_type", boardType)
             intent.putExtra("board_name", boardName)
             intent.putExtra("post_id", post.postId)
             intent.putExtra("board_id", boardId)
             intent.putExtra("club_id", clubId)
+
+            // 🔧 추가: 댓글수와 조회수 전달
+            intent.putExtra("list_comment_count", post.commentCount)
+            intent.putExtra("list_view_count", post.viewCount)
+            intent.putExtra("has_list_data", true)  // 목록에서 온 데이터임을 표시
+
             startActivityForResult(intent, 1001)
         }
 
@@ -592,15 +608,32 @@ class BoardActivity : AppCompatActivity() {
     }
 
     private fun displayPostDetail(post: PostDetail) {
+        Log.d("BoardActivity", "📝 displayPostDetail 시작")
+        Log.d("BoardActivity", "서버 댓글수: ${post.commentCount}, Intent 댓글수: $listCommentCount")
+
+        // 기본 정보 설정
         binding.tvPostTitle.text = post.title
         binding.tvPostAuthor.text = if (post.isAnonymous) "익명" else post.authorName
-        binding.tvPostDate.text = formatDate(post.createdAt)
+
+        // 🔧 날짜 형식을 HomeFragment와 동일하게 변경 (yy:MM:dd HHmm)
+        binding.tvPostDate.text = DateUtils.formatHomeDate(post.createdAt)
 
         // 마크다운 렌더링
         markwon.setMarkdown(binding.tvPostContent, post.content)
 
-        // 통계 정보 업데이트
-        updatePostStats()
+        // 조회수 설정 (서버 값 우선, 증가된 값이므로)
+        binding.tvPostViewCount.text = post.viewCount.toString()
+
+        // 댓글수 설정 (Intent 값 우선 사용)
+        if (hasListData && listCommentCount >= 0) {
+            // 목록에서 온 데이터가 있으면 그것을 사용 (더 정확함)
+            Log.d("BoardActivity", "✅ Intent 댓글수 사용: $listCommentCount")
+            binding.tvPostCommentCount.text = listCommentCount.toString()
+        } else {
+            // 목록 데이터가 없으면 서버 값 사용
+            Log.d("BoardActivity", "✅ 서버 댓글수 사용: ${post.commentCount}")
+            binding.tvPostCommentCount.text = post.commentCount.toString()
+        }
 
         // 좋아요/스크랩 버튼 상태 업데이트
         updateLikeButton(post.isLiked, post.likeCount)
@@ -608,6 +641,10 @@ class BoardActivity : AppCompatActivity() {
 
         // 수정/삭제 권한에 따른 메뉴 표시
         binding.ivMore.visibility = if (post.canEdit || post.canDelete) View.VISIBLE else View.GONE
+
+        Log.d("BoardActivity", "📝 displayPostDetail 완료")
+        Log.d("BoardActivity", "최종 표시 - 조회수: ${binding.tvPostViewCount.text}, 댓글수: ${binding.tvPostCommentCount.text}")
+        Log.d("BoardActivity", "날짜 형식: ${binding.tvPostDate.text}")
     }
 
     private fun showMoreMenu() {
