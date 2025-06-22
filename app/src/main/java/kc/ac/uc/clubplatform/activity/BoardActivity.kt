@@ -1,34 +1,31 @@
-// 업데이트된 BoardActivity.kt
 package kc.ac.uc.clubplatform.activity
 
+import android.app.DownloadManager
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
+import android.util.Log
 import android.view.View
+import android.widget.EditText
 import android.widget.PopupMenu
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import kc.ac.uc.clubplatform.databinding.ActivityBoardBinding
-import kc.ac.uc.clubplatform.adapters.PostAdapter
+import androidx.recyclerview.widget.LinearLayoutManager
+import io.noties.markwon.Markwon
+import kc.ac.uc.clubplatform.R
 import kc.ac.uc.clubplatform.adapters.CommentAdapter
+import kc.ac.uc.clubplatform.adapters.PostAdapter
+import kc.ac.uc.clubplatform.adapters.AttachedFileAdapter
 import kc.ac.uc.clubplatform.api.ApiClient
-import kc.ac.uc.clubplatform.models.PostInfo
-import kc.ac.uc.clubplatform.models.PostDetail
+import kc.ac.uc.clubplatform.databinding.ActivityBoardBinding
+import kc.ac.uc.clubplatform.models.*
 import kc.ac.uc.clubplatform.util.DateUtils
 import kotlinx.coroutines.launch
-import io.noties.markwon.Markwon
-import android.util.Log
-import kc.ac.uc.clubplatform.models.CommentInfo
-import kc.ac.uc.clubplatform.models.CreateCommentRequest
-import java.text.SimpleDateFormat
-import java.util.*
-import android.widget.EditText
-import androidx.core.content.ContextCompat
-import kc.ac.uc.clubplatform.R
-import kc.ac.uc.clubplatform.models.UpdateCommentRequest
 
 class BoardActivity : AppCompatActivity() {
     private lateinit var binding: ActivityBoardBinding
@@ -74,298 +71,61 @@ class BoardActivity : AppCompatActivity() {
         binding = ActivityBoardBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // 마크다운 초기화
-        markwon = Markwon.create(this)
-
-        // 인텐트에서 정보 가져오기
+        // Intent에서 데이터 가져오기
         boardType = intent.getStringExtra("board_type") ?: "general"
         boardName = intent.getStringExtra("board_name") ?: "게시판"
-        postId = intent.getIntExtra("post_id", -1).takeIf { it != -1 }
-        boardId = intent.getIntExtra("board_id", -1).takeIf { it != -1 }
+        boardId = intent.getIntExtra("board_id", -1)
         clubId = intent.getIntExtra("club_id", -1)
+        postId = if (intent.hasExtra("post_id")) intent.getIntExtra("post_id", -1) else null
 
+        // 🔧 추가: 목록에서 온 데이터 받기
         listCommentCount = intent.getIntExtra("list_comment_count", -1)
         listViewCount = intent.getIntExtra("list_view_count", -1)
         hasListData = intent.getBooleanExtra("has_list_data", false)
 
-        Log.d("BoardActivity", "Intent 데이터: commentCount=$listCommentCount, viewCount=$listViewCount, hasData=$hasListData")
+        Log.d("BoardActivity", "🚀 onCreate 시작")
+        Log.d("BoardActivity", "boardType: $boardType, postId: $postId")
+        Log.d("BoardActivity", "Intent 댓글수: $listCommentCount, Intent 조회수: $listViewCount")
+        Log.d("BoardActivity", "hasListData: $hasListData")
 
-        // 현재 동아리 ID 가져오기
-        if (clubId == -1) {
-            val sharedPreferences = getSharedPreferences("user_prefs", MODE_PRIVATE)
-            clubId = sharedPreferences.getInt("current_club_id", -1)
-        }
+        // Markwon 초기화
+        markwon = Markwon.create(this)
 
-        setupHeader()
-        setupCommentAdapter()
+        setupUI()
 
+        // postId가 있으면 게시글 상세 보기, 없으면 게시글 목록 보기
         if (postId != null) {
-            // 특정 게시글 화면 표시
             showPostDetail(postId!!)
         } else {
-            // 게시판 목록 화면 표시
             showPostList()
         }
     }
 
-    private fun setupHeader() {
-        // 게시판 이름 설정
+    private fun setupUI() {
         binding.tvBoardName.text = boardName
 
-        // 뒤로가기 버튼
+        // 뒤로 가기 버튼
         binding.ivBack.setOnClickListener {
             finish()
         }
 
-        // 검색 버튼 숨기기 (요구사항에 따라)
-        binding.ivSearch.visibility = View.GONE
-
-        // 더보기 버튼 - 처음에는 숨김
-        binding.ivMore.visibility = View.GONE
+        // 더보기 메뉴
         binding.ivMore.setOnClickListener {
             showMoreMenu()
         }
 
-        // 게시판 이름이 기본값인 경우 정보 로드
-        if (boardName == "게시판") {
-            lifecycleScope.launch {
-                loadBoardInfoIfNeeded()
-            }
-        }
-    }
-
-    private fun setupCommentAdapter() {
+        // 댓글 어댑터 초기화 - 실제 CommentAdapter 구조에 맞게 수정
         commentsAdapter = CommentAdapter(comments) { action, comment ->
             when (action) {
-                "like" -> {
-                    currentPost?.let { post ->
-                        toggleCommentLike(post.postId, comment.commentId)
-                    }
-                }
-                "edit" -> {
-                    showEditCommentDialog(comment)
-                }
-                "delete" -> {
-                    showDeleteCommentDialog(comment)
-                }
-                "reply" -> {
-                    showReplyDialog(comment)
-                }
+                "like" -> toggleCommentLike(comment.commentId)
+                "reply" -> showReplyDialog(comment)
+                "edit" -> showEditCommentDialog(comment)
+                "delete" -> showDeleteCommentDialog(comment)
             }
         }
+
         binding.rvComments.layoutManager = LinearLayoutManager(this)
         binding.rvComments.adapter = commentsAdapter
-    }
-
-    private fun showEditCommentDialog(comment: CommentInfo) {
-        val editText = EditText(this)
-        editText.setText(comment.content)
-
-        AlertDialog.Builder(this)
-            .setTitle("댓글 수정")
-            .setView(editText)
-            .setPositiveButton("수정") { _, _ ->
-                val newContent = editText.text.toString().trim()
-                if (newContent.isNotEmpty()) {
-                    currentPost?.let { post ->
-                        updateComment(post.postId, comment.commentId, newContent)
-                    }
-                }
-            }
-            .setNegativeButton("취소", null)
-            .show()
-    }
-
-    private fun showDeleteCommentDialog(comment: CommentInfo) {
-        AlertDialog.Builder(this)
-            .setTitle("댓글 삭제")
-            .setMessage("정말로 이 댓글을 삭제하시겠습니까?")
-            .setPositiveButton("삭제") { _, _ ->
-                currentPost?.let { post ->
-                    deleteComment(post.postId, comment.commentId)
-                }
-            }
-            .setNegativeButton("취소", null)
-            .show()
-    }
-
-    private fun showReplyDialog(parentComment: CommentInfo) {
-        val editText = EditText(this)
-        editText.hint = "대댓글을 입력하세요"
-
-        AlertDialog.Builder(this)
-            .setTitle("대댓글 작성")
-            .setView(editText)
-            .setPositiveButton("작성") { _, _ ->
-                val content = editText.text.toString().trim()
-                if (content.isNotEmpty()) {
-                    currentPost?.let { post ->
-                        createReply(post.postId, content, parentComment.commentId)
-                    }
-                }
-            }
-            .setNegativeButton("취소", null)
-            .show()
-    }
-
-    // 대댓글 작성
-    private fun createReply(postId: Int, content: String, parentId: Int) {
-        lifecycleScope.launch {
-            try {
-                val request = CreateCommentRequest(
-                    content = content,
-                    isAnonymous = false, // 대댓글은 일단 익명 옵션 없이
-                    parentId = parentId
-                )
-
-                val response = ApiClient.apiService.createComment(postId, request)
-                if (response.isSuccessful && response.body()?.success == true) {
-                    showToast("대댓글이 작성되었습니다")
-                    loadComments(postId)
-                    currentPost?.let { post ->
-                        currentPost = post.copy(commentCount = post.commentCount + 1)
-                        updatePostStats()
-                    }
-                } else {
-                    val errorMessage = response.body()?.message ?: "대댓글 작성에 실패했습니다"
-                    showToast(errorMessage)
-                }
-            } catch (e: Exception) {
-                Log.e("BoardActivity", "Error creating reply", e)
-                showToast("대댓글 작성 중 오류가 발생했습니다")
-            }
-        }
-    }
-
-    private fun showPostList() {
-        // 더보기 버튼 숨기기
-        binding.ivMore.visibility = View.GONE
-
-        // 게시글 작성 버튼 표시
-        binding.fabWritePost.show()
-        binding.fabWritePost.setOnClickListener {
-            val intent = Intent(this, WritePostActivity::class.java)
-            intent.putExtra("board_type", boardType)
-            intent.putExtra("board_name", boardName)
-            intent.putExtra("board_id", boardId)
-            intent.putExtra("club_id", clubId)
-            writePostLauncher.launch(intent)
-        }
-
-        // 게시판 이름이 기본값인 경우 정보 로드
-        lifecycleScope.launch {
-            loadBoardInfoIfNeeded()
-        }
-
-        loadPostList()
-
-        binding.rvPosts.visibility = View.VISIBLE
-        binding.layoutPostDetail.visibility = View.GONE
-    }
-
-    private fun loadPostList() {
-        lifecycleScope.launch {
-            try {
-                loadBoardsAndPosts()
-            } catch (e: Exception) {
-                Log.e("BoardActivity", "Error loading posts", e)
-                showToast("게시글을 불러오는 중 오류가 발생했습니다: ${e.message}")
-            }
-        }
-    }
-
-    private suspend fun loadBoardsAndPosts() {
-        try {
-            val response = ApiClient.apiService.getBoardsByClub(clubId)
-            if (response.isSuccessful && response.body()?.success == true) {
-                val boards = response.body()?.boards ?: emptyList()
-                val targetBoard = boards.find { it.type == boardType }
-
-                if (targetBoard != null) {
-                    boardId = targetBoard.boardId
-                    boardName = targetBoard.name
-                    binding.tvBoardName.text = boardName
-                    loadBoardPosts(targetBoard.boardId)
-                } else {
-                    showToast("해당 게시판을 찾을 수 없습니다")
-                }
-            } else {
-                showToast("게시판 정보를 불러올 수 없습니다")
-            }
-        } catch (e: Exception) {
-            Log.e("BoardActivity", "Error loading boards", e)
-            showToast("게시판을 불러오는 중 오류가 발생했습니다")
-        }
-    }
-
-    private suspend fun loadBoardInfoIfNeeded() {
-        // boardName이 기본값이고 boardId가 있는 경우 게시판 정보 조회
-        if (boardName == "게시판" && boardId != null && boardId != -1) {
-            try {
-                val response = ApiClient.apiService.getBoardsByClub(clubId)
-                if (response.isSuccessful && response.body()?.success == true) {
-                    val boards = response.body()?.boards ?: emptyList()
-                    val targetBoard = boards.find { it.boardId == boardId }
-                    if (targetBoard != null) {
-                        boardName = targetBoard.name
-                        binding.tvBoardName.text = boardName
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("BoardActivity", "Error loading board info", e)
-            }
-        }
-        // boardType에 따른 기본 이름 설정
-        else if (boardName == "게시판") {
-            boardName = when (boardType) {
-                "notice" -> "공지사항"
-                "tips" -> "Tips"
-                "general" -> "자유게시판"
-                else -> "게시판"
-            }
-            binding.tvBoardName.text = boardName
-        }
-    }
-
-    private suspend fun loadBoardPosts(boardId: Int) {
-        try {
-            val response = ApiClient.apiService.getPostsByBoard(boardId, boardType)
-            if (response.isSuccessful && response.body()?.success == true) {
-                val postList = response.body()?.posts ?: emptyList()
-                updatePostList(postList)
-            } else {
-                showToast("게시글을 불러올 수 없습니다")
-            }
-        } catch (e: Exception) {
-            Log.e("BoardActivity", "Error loading board posts", e)
-            showToast("게시글을 불러오는 중 오류가 발생했습니다")
-        }
-    }
-
-
-    private fun updatePostList(postList: List<PostInfo>) {
-        posts.clear()
-        posts.addAll(postList)
-
-        postAdapter = PostAdapter(posts) { post ->
-            // 게시글 클릭 시 댓글수도 함께 전달
-            val intent = Intent(this, BoardActivity::class.java)
-            intent.putExtra("board_type", boardType)
-            intent.putExtra("board_name", boardName)
-            intent.putExtra("post_id", post.postId)
-            intent.putExtra("board_id", boardId)
-            intent.putExtra("club_id", clubId)
-
-            // 🔧 추가: 댓글수와 조회수 전달
-            intent.putExtra("list_comment_count", post.commentCount)
-            intent.putExtra("list_view_count", post.viewCount)
-            intent.putExtra("has_list_data", true)  // 목록에서 온 데이터임을 표시
-
-            startActivityForResult(intent, 1001)
-        }
-
-        binding.rvPosts.layoutManager = LinearLayoutManager(this)
-        binding.rvPosts.adapter = postAdapter
     }
 
     private fun showPostDetail(postId: Int) {
@@ -416,8 +176,6 @@ class BoardActivity : AppCompatActivity() {
                 if (response.isSuccessful && response.body()?.success == true) {
                     val commentList = response.body()?.comments ?: emptyList()
                     updateCommentList(commentList)
-                } else {
-                    Log.e("BoardActivity", "Failed to load comments: ${response.body()?.message}")
                 }
             } catch (e: Exception) {
                 Log.e("BoardActivity", "Error loading comments", e)
@@ -425,57 +183,35 @@ class BoardActivity : AppCompatActivity() {
         }
     }
 
-    // 댓글 목록 업데이트
     private fun updateCommentList(commentList: List<CommentInfo>) {
-        // 익명 번호 재설정
-        anonymousCounter = 0
-        anonymousMap.clear()
-
-        val processedComments = commentList.map { comment ->
-            if (comment.isAnonymous) {
-                val anonymousName = getAnonymousName(comment.authorName)
-                comment.copy(authorName = anonymousName)
-            } else {
-                comment
-            }
-        }
-
+        Log.d("BoardActivity", "💬 댓글 목록 업데이트: ${commentList.size}개")
         comments.clear()
-        comments.addAll(processedComments)
+        comments.addAll(commentList)
         commentsAdapter.notifyDataSetChanged()
+
+        // 댓글 수 업데이트 - 실제 댓글 개수로 표시
+        val actualCommentCount = commentList.size
+        binding.tvPostCommentCount.text = actualCommentCount.toString()
+        Log.d("BoardActivity", "💬 실제 댓글수로 업데이트: $actualCommentCount")
+
+        // currentPost의 commentCount도 업데이트
+        currentPost = currentPost?.copy(commentCount = actualCommentCount)
     }
 
-    // 익명 이름 생성 - 같은 사용자는 같은 번호 유지
-    private fun getAnonymousName(originalAuthor: String): String {
-        return anonymousMap.getOrPut(originalAuthor) {
-            anonymousCounter++
-            "익명$anonymousCounter"
-        }
-    }
-
-    // 댓글 작성
     private fun createComment(postId: Int, content: String) {
         lifecycleScope.launch {
             try {
-                val isAnonymous = binding.cbAnonymous.isChecked // 익명 체크박스 값 읽기
-
                 val request = CreateCommentRequest(
                     content = content,
-                    isAnonymous = isAnonymous
+                    isAnonymous = false,
+                    parentId = null
                 )
 
                 val response = ApiClient.apiService.createComment(postId, request)
                 if (response.isSuccessful && response.body()?.success == true) {
                     binding.etComment.setText("")
-                    binding.cbAnonymous.isChecked = false // 체크박스 초기화
+                    loadComments(postId) // 댓글 목록 새로고침
                     showToast("댓글이 작성되었습니다")
-                    // 댓글 목록 새로고침
-                    loadComments(postId)
-                    // 게시글의 댓글 수 업데이트
-                    currentPost?.let { post ->
-                        currentPost = post.copy(commentCount = post.commentCount + 1)
-                        updatePostStats()
-                    }
                 } else {
                     val errorMessage = response.body()?.message ?: "댓글 작성에 실패했습니다"
                     showToast(errorMessage)
@@ -487,16 +223,80 @@ class BoardActivity : AppCompatActivity() {
         }
     }
 
-    // 댓글 수정
+    private fun showReplyDialog(parentComment: CommentInfo) {
+        val editText = EditText(this).apply {
+            hint = "대댓글을 입력하세요"
+            setPadding(32, 32, 32, 32)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("대댓글 작성")
+            .setView(editText)
+            .setPositiveButton("작성") { _, _ ->
+                val content = editText.text.toString().trim()
+                if (content.isNotEmpty()) {
+                    currentPost?.let { post ->
+                        createReply(post.postId, content, parentComment.commentId)
+                    }
+                }
+            }
+            .setNegativeButton("취소", null)
+            .show()
+    }
+
+    private fun createReply(postId: Int, content: String, parentId: Int) {
+        lifecycleScope.launch {
+            try {
+                val request = CreateCommentRequest(
+                    content = content,
+                    isAnonymous = false,
+                    parentId = parentId
+                )
+
+                val response = ApiClient.apiService.createComment(postId, request)
+                if (response.isSuccessful && response.body()?.success == true) {
+                    loadComments(postId) // 댓글 목록 새로고침
+                    showToast("대댓글이 작성되었습니다")
+                } else {
+                    val errorMessage = response.body()?.message ?: "대댓글 작성에 실패했습니다"
+                    showToast(errorMessage)
+                }
+            } catch (e: Exception) {
+                Log.e("BoardActivity", "Error creating reply", e)
+                showToast("대댓글 작성 중 오류가 발생했습니다")
+            }
+        }
+    }
+
+    private fun showEditCommentDialog(comment: CommentInfo) {
+        val editText = EditText(this).apply {
+            setText(comment.content)
+            setPadding(32, 32, 32, 32)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("댓글 수정")
+            .setView(editText)
+            .setPositiveButton("수정") { _, _ ->
+                val content = editText.text.toString().trim()
+                if (content.isNotEmpty()) {
+                    currentPost?.let { post ->
+                        updateComment(post.postId, comment.commentId, content)
+                    }
+                }
+            }
+            .setNegativeButton("취소", null)
+            .show()
+    }
+
     private fun updateComment(postId: Int, commentId: Int, content: String) {
         lifecycleScope.launch {
             try {
                 val request = UpdateCommentRequest(content = content)
                 val response = ApiClient.apiService.updateComment(postId, commentId, request)
-
                 if (response.isSuccessful && response.body()?.success == true) {
+                    loadComments(postId) // 댓글 목록 새로고침
                     showToast("댓글이 수정되었습니다")
-                    loadComments(postId)
                 } else {
                     val errorMessage = response.body()?.message ?: "댓글 수정에 실패했습니다"
                     showToast(errorMessage)
@@ -508,19 +308,26 @@ class BoardActivity : AppCompatActivity() {
         }
     }
 
-    // 댓글 삭제
+    private fun showDeleteCommentDialog(comment: CommentInfo) {
+        AlertDialog.Builder(this)
+            .setTitle("댓글 삭제")
+            .setMessage("댓글을 삭제하시겠습니까?")
+            .setPositiveButton("삭제") { _, _ ->
+                currentPost?.let { post ->
+                    deleteComment(post.postId, comment.commentId)
+                }
+            }
+            .setNegativeButton("취소", null)
+            .show()
+    }
+
     private fun deleteComment(postId: Int, commentId: Int) {
         lifecycleScope.launch {
             try {
                 val response = ApiClient.apiService.deleteComment(postId, commentId)
                 if (response.isSuccessful && response.body()?.success == true) {
+                    loadComments(postId) // 댓글 목록 새로고침
                     showToast("댓글이 삭제되었습니다")
-                    loadComments(postId)
-                    // 게시글의 댓글 수 업데이트
-                    currentPost?.let { post ->
-                        currentPost = post.copy(commentCount = post.commentCount - 1)
-                        updatePostStats()
-                    }
                 } else {
                     val errorMessage = response.body()?.message ?: "댓글 삭제에 실패했습니다"
                     showToast(errorMessage)
@@ -532,13 +339,13 @@ class BoardActivity : AppCompatActivity() {
         }
     }
 
-    // 댓글 좋아요
-    private fun toggleCommentLike(postId: Int, commentId: Int) {
+    private fun toggleCommentLike(commentId: Int) {
         lifecycleScope.launch {
             try {
-                val response = ApiClient.apiService.likeComment(postId, commentId)
+                val response = ApiClient.apiService.likeComment(currentPost!!.postId, commentId)
                 if (response.isSuccessful && response.body()?.success == true) {
                     val likeResponse = response.body()!!
+
                     // 댓글 목록에서 해당 댓글 찾아서 좋아요 상태 업데이트
                     val commentIndex = comments.indexOfFirst { it.commentId == commentId }
                     if (commentIndex != -1) {
@@ -558,14 +365,6 @@ class BoardActivity : AppCompatActivity() {
         }
     }
 
-    // 게시글 통계 정보 업데이트 (조회수, 댓글수, 스크랩수)
-    private fun updatePostStats() {
-        currentPost?.let { post ->
-            binding.tvPostViewCount.text = post.viewCount.toString()
-            binding.tvPostCommentCount.text = post.commentCount.toString()
-        }
-    }
-
     private fun displayPostDetail(post: PostDetail) {
         Log.d("BoardActivity", "📝 displayPostDetail 시작")
         Log.d("BoardActivity", "서버 댓글수: ${post.commentCount}, Intent 댓글수: $listCommentCount")
@@ -573,7 +372,6 @@ class BoardActivity : AppCompatActivity() {
         // 기본 정보 설정
         binding.tvPostTitle.text = post.title
         binding.tvPostAuthor.text = if (post.isAnonymous) "익명" else post.authorName
-
         binding.tvPostDate.text = DateUtils.formatHomeDate(post.createdAt)
 
         // 마크다운 렌더링
@@ -593,6 +391,9 @@ class BoardActivity : AppCompatActivity() {
             binding.tvPostCommentCount.text = post.commentCount.toString()
         }
 
+        // 🆕 첨부파일 표시
+        displayAttachments(post.attachments)
+
         // 좋아요/스크랩 버튼 상태 업데이트
         updateLikeButton(post.isLiked, post.likeCount)
         updateScrapButton(post.isScraped)
@@ -605,67 +406,148 @@ class BoardActivity : AppCompatActivity() {
         Log.d("BoardActivity", "날짜 형식: ${binding.tvPostDate.text}")
     }
 
+    // 🆕 첨부파일 표시 메서드
+    private fun displayAttachments(attachments: List<String>?) {
+        if (attachments.isNullOrEmpty()) {
+            binding.rvPostAttachments.visibility = View.GONE
+            return
+        }
+
+        // 첨부파일 URL을 UploadedFileInfo 형태로 변환
+        val attachmentInfos = attachments.map { url ->
+            val fileName = url.substringAfterLast('/')
+            val originalName = fileName.substringBefore('_', fileName) // UUID 제거 시도
+
+            UploadedFileInfo(
+                fileName = fileName,
+                originalName = if (originalName.isBlank()) fileName else originalName,
+                fileUrl = url,
+                fileSize = 0, // 크기 정보 없음
+                contentType = getContentTypeFromUrl(url)
+            )
+        }.toMutableList()
+
+        // 첨부파일 어댑터 설정
+        val attachmentAdapter = AttachedFileAdapter(
+            files = attachmentInfos,
+            onDeleteClick = { }, // 상세 화면에서는 삭제 불가
+            onFileClick = { fileInfo ->
+                handleAttachmentClick(fileInfo)
+            },
+            showDeleteButton = false // 🆕 상세 화면에서는 삭제 버튼 숨김
+        )
+
+        binding.rvPostAttachments.layoutManager = LinearLayoutManager(this)
+        binding.rvPostAttachments.adapter = attachmentAdapter
+        binding.rvPostAttachments.visibility = View.VISIBLE
+    }
+
+    // 🆕 URL에서 컨텐츠 타입 추출
+    private fun getContentTypeFromUrl(url: String): String {
+        val extension = url.substringAfterLast('.').lowercase()
+        return when (extension) {
+            "jpg", "jpeg" -> "image/jpeg"
+            "png" -> "image/png"
+            "gif" -> "image/gif"
+            "webp" -> "image/webp"
+            "pdf" -> "application/pdf"
+            "doc", "docx" -> "application/msword"
+            "xls", "xlsx" -> "application/vnd.ms-excel"
+            "txt" -> "text/plain"
+            else -> "application/octet-stream"
+        }
+    }
+
+    // 🆕 첨부파일 클릭 처리
+    private fun handleAttachmentClick(fileInfo: UploadedFileInfo) {
+        when {
+            fileInfo.contentType.startsWith("image/") -> {
+                // 이미지인 경우 이미지 뷰어로 보기
+                val intent = Intent(this, ImageViewerActivity::class.java).apply {
+                    putExtra("image_url", "${ApiClient.BASE_URL.trimEnd('/')}${fileInfo.fileUrl}")
+                    putExtra("image_name", fileInfo.originalName)
+                }
+                startActivity(intent)
+            }
+            else -> {
+                // 다른 파일들은 다운로드
+                downloadAttachment(fileInfo)
+            }
+        }
+    }
+
+    // 🆕 첨부파일 다운로드
+    private fun downloadAttachment(fileInfo: UploadedFileInfo) {
+        try {
+            val downloadManager = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
+            val fileUrl = "${ApiClient.BASE_URL.trimEnd('/')}${fileInfo.fileUrl}"
+
+            val request = DownloadManager.Request(Uri.parse(fileUrl)).apply {
+                setTitle("파일 다운로드")
+                setDescription("${fileInfo.originalName} 다운로드 중...")
+                setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileInfo.originalName)
+                setAllowedOverMetered(true)
+                setAllowedOverRoaming(true)
+            }
+
+            downloadManager.enqueue(request)
+            showToast("다운로드를 시작합니다")
+
+        } catch (e: Exception) {
+            Log.e("BoardActivity", "Download failed", e)
+            showToast("다운로드에 실패했습니다")
+        }
+    }
+
     private fun showMoreMenu() {
         val post = currentPost ?: return
 
-        val popupMenu = PopupMenu(this, binding.ivMore)
-
+        val popup = PopupMenu(this, binding.ivMore)
         if (post.canEdit) {
-            popupMenu.menu.add(0, 1, 0, "수정")
+            popup.menu.add(0, 1, 0, "수정")
         }
         if (post.canDelete) {
-            popupMenu.menu.add(0, 2, 0, "삭제")
+            popup.menu.add(0, 2, 0, "삭제")
         }
 
-        popupMenu.setOnMenuItemClickListener { item ->
+        popup.setOnMenuItemClickListener { item ->
             when (item.itemId) {
-                1 -> {
-                    // 수정
-                    editPost()
-                    true
-                }
-                2 -> {
-                    // 삭제
-                    showDeleteConfirmDialog()
-                    true
-                }
-                else -> false
+                1 -> editPost(post)
+                2 -> showDeleteConfirmDialog(post)
             }
+            true
         }
 
-        popupMenu.show()
+        popup.show()
     }
 
-    private fun editPost() {
-        val post = currentPost ?: return
-
-        val intent = Intent(this, WritePostActivity::class.java)
-        intent.putExtra("board_type", boardType)
-        intent.putExtra("board_name", boardName)
-        intent.putExtra("board_id", boardId)
-        intent.putExtra("club_id", clubId)
-        intent.putExtra("post_id", post.postId)
-        intent.putExtra("title", post.title)
-        intent.putExtra("content", post.content)
-        intent.putExtra("is_anonymous", post.isAnonymous)
-        intent.putExtra("is_notice", post.isNotice ?: false)
-        intent.putExtra("is_edit_mode", true)
+    private fun editPost(post: PostDetail) {
+        val intent = Intent(this, WritePostActivity::class.java).apply {
+            putExtra("board_type", boardType)
+            putExtra("board_name", boardName)
+            putExtra("board_id", boardId)
+            putExtra("club_id", clubId)
+            putExtra("edit_mode", true)
+            putExtra("post_id", post.postId)
+            putExtra("post_title", post.title)
+            putExtra("post_content", post.content)
+            putExtra("post_is_notice", post.isNotice)
+        }
         editPostLauncher.launch(intent)
     }
 
-    private fun showDeleteConfirmDialog() {
+    private fun showDeleteConfirmDialog(post: PostDetail) {
         AlertDialog.Builder(this)
             .setTitle("게시글 삭제")
-            .setMessage("정말로 이 게시글을 삭제하시겠습니까?")
-            .setPositiveButton("삭제") { _, _ ->
-                deletePost()
-            }
+            .setMessage("게시글을 삭제하시겠습니까?")
+            .setPositiveButton("삭제") { _, _ -> deletePost(post) }
             .setNegativeButton("취소", null)
             .show()
     }
 
-    private fun deletePost() {
-        val post = currentPost ?: return
+    private fun deletePost(post: PostDetail) {
+        if (post.postId <= 0) return
 
         lifecycleScope.launch {
             try {
@@ -744,8 +626,6 @@ class BoardActivity : AppCompatActivity() {
 
                     // 현재 게시글 정보 업데이트
                     currentPost = currentPost?.copy(isScraped = scrapResponse.isScraped)
-
-                    showToast(if (scrapResponse.isScraped) "스크랩했습니다" else "스크랩을 취소했습니다")
                 } else {
                     showToast("스크랩 처리 중 오류가 발생했습니다")
                 }
@@ -756,32 +636,200 @@ class BoardActivity : AppCompatActivity() {
         }
     }
 
-    // 좋아요 버튼 상태 업데이트
     private fun updateLikeButton(isLiked: Boolean, likeCount: Int) {
-        if (isLiked) {
-            binding.btnLike.setTextColor(ContextCompat.getColor(this, R.color.white))
-            binding.btnLike.setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_favorite_filled, 0, 0, 0)
-        } else {
-            binding.btnLike.setBackgroundColor(ContextCompat.getColor(this, R.color.light_gray))
-            binding.btnLike.setTextColor(ContextCompat.getColor(this, R.color.dark_gray))
-            binding.btnLike.setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_favorite_border, 0, 0, 0)
-        }
-        binding.btnLike.text = "공감 $likeCount"
+        val likeIcon = if (isLiked) R.drawable.ic_favorite_filled else R.drawable.ic_favorite_border
+        val likeColor = if (isLiked) ContextCompat.getColor(this, R.color.colorPrimary)
+        else ContextCompat.getColor(this, R.color.dark_gray)
+
+        binding.btnLike.setCompoundDrawablesWithIntrinsicBounds(likeIcon, 0, 0, 0)
+        binding.btnLike.setTextColor(likeColor)
+        binding.btnLike.text = likeCount.toString()
     }
 
-    // 스크랩 버튼 상태 업데이트
     private fun updateScrapButton(isScraped: Boolean) {
-        if (isScraped) {
-            binding.btnScrap.setBackgroundColor(ContextCompat.getColor(this, R.color.blue))
-            binding.btnScrap.setTextColor(ContextCompat.getColor(this, R.color.white))
-            binding.btnScrap.setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_bookmark_filled, 0, 0, 0)
-            binding.btnScrap.text = "스크랩"
-        } else {
-            binding.btnScrap.setBackgroundColor(ContextCompat.getColor(this, R.color.light_gray))
-            binding.btnScrap.setTextColor(ContextCompat.getColor(this, R.color.dark_gray))
-            binding.btnScrap.setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_bookmark_border, 0, 0, 0)
-            binding.btnScrap.text = "스크랩"
+        val scrapIcon = if (isScraped) R.drawable.ic_bookmark_filled else R.drawable.ic_bookmark_border
+        val scrapColor = if (isScraped) ContextCompat.getColor(this, R.color.colorPrimary)
+        else ContextCompat.getColor(this, R.color.dark_gray)
+
+        binding.btnScrap.setCompoundDrawablesWithIntrinsicBounds(scrapIcon, 0, 0, 0)
+        binding.btnScrap.setTextColor(scrapColor)
+    }
+
+    private fun showPostList() {
+        // 더보기 버튼 숨기기
+        binding.ivMore.visibility = View.GONE
+
+        // 게시글 작성 버튼 표시
+        binding.fabWritePost.show()
+        binding.fabWritePost.setOnClickListener {
+            val intent = Intent(this, WritePostActivity::class.java)
+            intent.putExtra("board_type", boardType)
+            intent.putExtra("board_name", boardName)
+            intent.putExtra("board_id", boardId)
+            intent.putExtra("club_id", clubId)
+            writePostLauncher.launch(intent)
         }
+
+        // 게시판 이름이 기본값인 경우 정보 로드
+        lifecycleScope.launch {
+            loadBoardInfoIfNeeded()
+        }
+
+        loadPostList()
+
+        binding.rvPosts.visibility = View.VISIBLE
+        binding.layoutPostDetail.visibility = View.GONE
+    }
+
+    private fun loadPostList() {
+        lifecycleScope.launch {
+            try {
+                loadBoardsAndPosts()
+            } catch (e: Exception) {
+                Log.e("BoardActivity", "Error loading posts", e)
+                showToast("게시글을 불러오는 중 오류가 발생했습니다: ${e.message}")
+            }
+        }
+    }
+
+    // 🆕 새로운 게시판 API 처리가 포함된 수정된 메서드
+    private suspend fun loadBoardsAndPosts() {
+        try {
+            // 특수 게시판인지 확인
+            if (isSpecialBoard(boardType)) {
+                // 특수 게시판의 경우 boardId 없이 바로 게시글 로드
+                boardName = getBoardNameFromType(boardType)
+                binding.tvBoardName.text = boardName
+                loadBoardPosts(-1) // boardId는 -1로 전달 (특수 게시판 표시)
+            } else {
+                // 일반 게시판의 경우 기존 로직 유지 - 서버에서 게시판 목록 조회
+                val response = ApiClient.apiService.getBoardsByClub(clubId)
+                if (response.isSuccessful && response.body()?.success == true) {
+                    val boards = response.body()?.boards ?: emptyList()
+                    val targetBoard = boards.find { it.type == boardType }
+
+                    if (targetBoard != null) {
+                        boardId = targetBoard.boardId
+                        boardName = targetBoard.name
+                        binding.tvBoardName.text = boardName
+                        loadBoardPosts(targetBoard.boardId)
+                    } else {
+                        showToast("해당 게시판을 찾을 수 없습니다")
+                    }
+                } else {
+                    showToast("게시판 정보를 불러올 수 없습니다")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("BoardActivity", "Error loading boards", e)
+            showToast("게시판을 불러오는 중 오류가 발생했습니다")
+        }
+    }
+
+    // 특수 게시판인지 확인하는 헬퍼 메서드
+    private fun isSpecialBoard(boardType: String): Boolean {
+        return boardType in listOf("hot", "best", "my_posts", "my_comments", "my_scraps")
+    }
+
+    // 🆕 새로운 게시판 API 처리가 포함된 수정된 메서드
+    private suspend fun loadBoardPosts(boardId: Int) {
+        try {
+            val response = when (boardType) {
+                // 🆕 새로 추가된 특수 게시판 타입들 처리
+                "hot" -> {
+                    // 인기 게시글 API 호출 (실제로는 기존 API 사용)
+                    ApiClient.apiService.getPostsByBoard(-1, "hot")
+                }
+                "best" -> {
+                    // 베스트 게시글 API 호출 (실제로는 기존 API 사용)
+                    ApiClient.apiService.getPostsByBoard(-1, "best")
+                }
+                "my_posts" -> {
+                    // 내 게시글 API 호출
+                    ApiClient.apiService.getMyPosts()
+                }
+                "my_comments" -> {
+                    // 댓글 단 게시글 API 호출
+                    ApiClient.apiService.getMyComments()
+                }
+                "my_scraps" -> {
+                    // 스크랩한 게시글 API 호출
+                    ApiClient.apiService.getMyScraps()
+                }
+                else -> {
+                    // 일반 게시판 게시글 조회
+                    ApiClient.apiService.getPostsByBoard(boardId, boardType)
+                }
+            }
+
+            if (response.isSuccessful && response.body()?.success == true) {
+                // 모든 응답이 PostListResponse 형태이므로 통일된 처리
+                val postList = response.body()?.posts ?: emptyList()
+                updatePostList(postList)
+            } else {
+                showToast("게시글을 불러올 수 없습니다")
+            }
+        } catch (e: Exception) {
+            Log.e("BoardActivity", "Error loading board posts", e)
+            showToast("게시글을 불러오는 중 오류가 발생했습니다")
+        }
+    }
+
+    // 🆕 게시판 타입에서 이름을 가져오는 헬퍼 메서드 추가
+    private fun getBoardNameFromType(type: String): String {
+        return when (type) {
+            "hot" -> "인기 게시글"
+            "best" -> "베스트 게시글"
+            "my_posts" -> "내 게시글"
+            "my_comments" -> "댓글 단 게시글"
+            "my_scraps" -> "스크랩한 게시글"
+            else -> "게시판"
+        }
+    }
+
+    private suspend fun loadBoardInfoIfNeeded() {
+        // boardName이 기본값이고 boardId가 있는 경우 게시판 정보 조회
+        if (boardName == "게시판" && boardId != null && boardId != -1) {
+            try {
+                val response = ApiClient.apiService.getBoardsByClub(clubId)
+                if (response.isSuccessful && response.body()?.success == true) {
+                    val boards = response.body()?.boards ?: emptyList()
+                    val targetBoard = boards.find { it.boardId == boardId }
+
+                    if (targetBoard != null) {
+                        boardName = targetBoard.name
+                        binding.tvBoardName.text = boardName
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("BoardActivity", "Error loading board info", e)
+            }
+        }
+    }
+
+    private fun updatePostList(postList: List<PostInfo>) {
+        posts.clear()
+        posts.addAll(postList)
+
+        postAdapter = PostAdapter(posts) { post ->
+            // 게시글 클릭 시 댓글수도 함께 전달
+            val intent = Intent(this, BoardActivity::class.java)
+            intent.putExtra("board_type", boardType)
+            intent.putExtra("board_name", boardName)
+            intent.putExtra("post_id", post.postId)
+            intent.putExtra("board_id", boardId)
+            intent.putExtra("club_id", clubId)
+
+            // 🔧 추가: 댓글수와 조회수 전달
+            intent.putExtra("list_comment_count", post.commentCount)
+            intent.putExtra("list_view_count", post.viewCount)
+            intent.putExtra("has_list_data", true)  // 목록에서 온 데이터임을 표시
+
+            startActivityForResult(intent, 1001)
+        }
+
+        binding.rvPosts.layoutManager = LinearLayoutManager(this)
+        binding.rvPosts.adapter = postAdapter
     }
 
     private fun showToast(message: String) {
@@ -792,9 +840,8 @@ class BoardActivity : AppCompatActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 1001 && resultCode == RESULT_OK) {
-            // 하위 액티비티에서 변경사항이 있었으면 목록 새로고침
+            // 하위 게시글에서 변경사항이 있었으면 목록 새로고침
             loadPostList()
-            setResult(RESULT_OK)
         }
     }
 }

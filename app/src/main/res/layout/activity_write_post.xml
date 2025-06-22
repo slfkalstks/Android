@@ -133,6 +133,13 @@
                     android:drawableStart="@drawable/ic_upload"
                     android:paddingStart="16dp"
                     android:paddingEnd="16dp"/>
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/rvAttachedFiles"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:visibility="gone" />
             </LinearLayout>
 
             <CheckBox
