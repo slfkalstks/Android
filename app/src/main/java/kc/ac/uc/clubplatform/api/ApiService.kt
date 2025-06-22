@@ -82,11 +82,22 @@ interface ApiService {
     @POST("posts/{postId}/scrap")
     suspend fun scrapPost(@Path("postId") postId: Int): Response<ScrapResponse>
 
+    // 기존 베스트/인기 게시글 API
     @GET("posts/best")
     suspend fun getBestPosts(): Response<SpecialBoardResponse>
 
     @GET("posts/hot")
     suspend fun getHotPosts(): Response<SpecialBoardResponse>
+
+    // 🆕 새로 추가된 게시판 API
+    @GET("posts/my-posts")
+    suspend fun getMyPosts(): Response<PostListResponse>
+
+    @GET("posts/my-comments")
+    suspend fun getMyComments(): Response<PostListResponse>
+
+    @GET("posts/my-scraps")
+    suspend fun getMyScraps(): Response<PostListResponse>
 
     // 댓글 목록 조회
     @GET("posts/{post_id}/comments")
@@ -121,5 +132,3 @@ interface ApiService {
         @Path("comment_id") commentId: Int
     ): Response<CommentLikeResponse>
 }
-
-

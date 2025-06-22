@@ -6,6 +6,17 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- 🆕 파일 다운로드를 위한 권한 -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
+    <!-- 🆕 파일 읽기 권한 -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+
+    <!-- 🆕 Android 10 이상에서의 파일 접근 권한 -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+
     <application
         android:name=".ClubPlatformApplication"
         android:allowBackup="true"
@@ -19,6 +30,9 @@
         android:theme="@style/Theme.ClubPlatform"
         android:usesCleartextTraffic="true"
         tools:targetApi="31">
+        <activity
+            android:name=".activity.ImageViewerActivity"
+            android:exported="false" />
         <activity
             android:name=".activity.ClubJoinActivity"
             android:exported="false" />
@@ -51,7 +65,7 @@
         </activity>
         <activity
             android:name=".MainActivity"
-            android:exported="true"></activity>
+            android:exported="true" />
         <activity android:name=".activity.ChatRoomActivity" />
     </application>
 

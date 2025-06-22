@@ -47,7 +47,8 @@ data class PostDetail(
     val isNotice: Boolean? = null,
     val canEdit: Boolean,
     val canDelete: Boolean,
-    val commentCount: Int = 0
+    val commentCount: Int = 0,
+    val attachments: List<String>? = null // 🆕 첨부파일 URL 목록 추가
 ) : Parcelable
 
 // 게시글 생성 요청
@@ -106,10 +107,11 @@ data class ScrapResponse(
     val isScraped: Boolean
 )
 
-// BEST/HOT 게시판 응답
+// 🆕 수정된 BEST/HOT 게시판 응답 (서버 응답 형식에 맞게 수정)
 data class SpecialBoardResponse(
-    val posts: List<PostInfo>,
-    val totalCount: Int
+    val success: Boolean,
+    val message: String,
+    val posts: List<PostInfo>
 )
 
 // 댓글 정보
@@ -138,7 +140,7 @@ data class CommentListResponse(
 data class CreateCommentRequest(
     val content: String,
     val isAnonymous: Boolean,
-    val parentId: Int? = null // 대댓글인 경우
+    val parentId: Int? = null
 )
 
 // 댓글 작성 응답
@@ -158,7 +160,13 @@ data class UpdateCommentRequest(
 data class UpdateCommentResponse(
     val success: Boolean,
     val message: String,
-    val data: CommentInfo?
+    val updatedAt: String?
+)
+
+// 댓글 삭제 응답
+data class DeleteCommentResponse(
+    val success: Boolean,
+    val message: String
 )
 
 // 댓글 좋아요 응답
@@ -169,8 +177,17 @@ data class CommentLikeResponse(
     val likeCount: Int
 )
 
-// 댓글 삭제 응답
-data class DeleteCommentResponse(
+// 🆕 파일 업로드 관련 모델
+data class FileUploadResponse(
     val success: Boolean,
-    val message: String
+    val message: String,
+    val files: List<UploadedFileInfo>
+)
+
+data class UploadedFileInfo(
+    val fileName: String,
+    val originalName: String,
+    val fileUrl: String,
+    val fileSize: Long,
+    val contentType: String
 )

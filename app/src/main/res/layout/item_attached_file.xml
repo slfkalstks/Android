@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:padding="12dp"
+    android:background="?android:attr/selectableItemBackground"
+    android:gravity="center_vertical">
+
+    <!-- 파일 아이콘/이미지 미리보기 컨테이너 -->
+    <FrameLayout
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_marginEnd="12dp">
+
+        <!-- 파일 아이콘 (이미지가 아닌 경우) -->
+        <ImageView
+            android:id="@+id/ivFileIcon"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_gravity="center"
+            android:src="@android:drawable/ic_menu_save"
+            android:contentDescription="파일 아이콘" />
+
+        <!-- 🆕 이미지 미리보기 (이미지인 경우) -->
+        <ImageView
+            android:id="@+id/ivImagePreview"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:scaleType="centerCrop"
+            android:background="@drawable/image_border"
+            android:visibility="gone"
+            android:contentDescription="이미지 미리보기" />
+
+    </FrameLayout>
+
+    <!-- 파일 정보 -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <!-- 파일명 -->
+        <TextView
+            android:id="@+id/tvFileName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="파일명.pdf"
+            android:textSize="14sp"
+            android:textColor="@android:color/black"
+            android:maxLines="1"
+            android:ellipsize="middle" />
+
+        <!-- 파일 크기 -->
+        <TextView
+            android:id="@+id/tvFileSize"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="1.2MB"
+            android:textSize="12sp"
+            android:textColor="@android:color/darker_gray"
+            android:layout_marginTop="2dp" />
+
+        <!-- 🆕 파일 타입 표시 -->
+        <TextView
+            android:id="@+id/tvFileType"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="클릭하여 다운로드"
+            android:textSize="11sp"
+            android:textColor="@android:color/holo_blue_dark"
+            android:layout_marginTop="1dp" />
+
+    </LinearLayout>
+
+    <!-- 삭제 버튼 -->
+    <ImageButton
+        android:id="@+id/btnDeleteFile"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_marginStart="8dp"
+        android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:src="@android:drawable/ic_menu_close_clear_cancel"
+        android:contentDescription="파일 삭제"
+        android:scaleType="centerInside" />
+
+</LinearLayout>

@@ -1,19 +1,35 @@
 package kc.ac.uc.clubplatform.activity
 
+import android.app.Activity
+import android.app.DownloadManager
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
+import android.provider.OpenableColumns
+import android.util.Log
 import android.view.View
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import kc.ac.uc.clubplatform.databinding.ActivityWritePostBinding
-import kc.ac.uc.clubplatform.api.ApiClient
-import kotlinx.coroutines.launch
+import androidx.recyclerview.widget.LinearLayoutManager
 import io.noties.markwon.Markwon
 import io.noties.markwon.editor.MarkwonEditor
 import io.noties.markwon.editor.MarkwonEditorTextWatcher
-import android.util.Log
+import kc.ac.uc.clubplatform.api.ApiClient
+import kc.ac.uc.clubplatform.databinding.ActivityWritePostBinding
 import kc.ac.uc.clubplatform.models.CreatePostRequest
 import kc.ac.uc.clubplatform.models.UpdatePostRequest
+import kc.ac.uc.clubplatform.models.UploadedFileInfo
+import kc.ac.uc.clubplatform.adapters.AttachedFileAdapter
+import kotlinx.coroutines.launch
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.asRequestBody
+import java.io.File
+import java.io.FileOutputStream
+import java.util.concurrent.Executors
 
 class WritePostActivity : AppCompatActivity() {
     private lateinit var binding: ActivityWritePostBinding
@@ -26,6 +42,35 @@ class WritePostActivity : AppCompatActivity() {
     private lateinit var markwon: Markwon
     private lateinit var editor: MarkwonEditor
 
+    // 🆕 파일 업로드 관련
+    private val selectedFiles = mutableListOf<Uri>()
+    private val uploadedFiles = mutableListOf<UploadedFileInfo>()
+    private lateinit var attachedFileAdapter: AttachedFileAdapter
+
+    // 파일 선택 런처
+    private val filePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            result.data?.let { data ->
+                when {
+                    data.clipData != null -> {
+                        // 여러 파일 선택
+                        for (i in 0 until data.clipData!!.itemCount) {
+                            val uri = data.clipData!!.getItemAt(i).uri
+                            selectedFiles.add(uri)
+                        }
+                    }
+                    data.data != null -> {
+                        // 단일 파일 선택
+                        selectedFiles.add(data.data!!)
+                    }
+                }
+                updateFileList()
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityWritePostBinding.inflate(layoutInflater)
@@ -36,7 +81,7 @@ class WritePostActivity : AppCompatActivity() {
         boardName = intent.getStringExtra("board_name") ?: "게시판"
         boardId = intent.getIntExtra("board_id", -1)
         clubId = intent.getIntExtra("club_id", -1)
-        isEditMode = intent.getBooleanExtra("is_edit_mode", false)
+        isEditMode = intent.getBooleanExtra("edit_mode", false)
 
         if (isEditMode) {
             postId = intent.getIntExtra("post_id", -1)
@@ -52,66 +97,46 @@ class WritePostActivity : AppCompatActivity() {
         setupMarkdown()
         setupUI()
         setupListeners()
+        setupFileRecyclerView()
     }
 
     private fun loadEditData() {
-        binding.etTitle.setText(intent.getStringExtra("title") ?: "")
-        binding.etContent.setText(intent.getStringExtra("content") ?: "")
-        binding.cbAnonymous?.isChecked = intent.getBooleanExtra("is_anonymous", false)
-        binding.cbNotice.isChecked = intent.getBooleanExtra("is_notice", false)
+        binding.etTitle.setText(intent.getStringExtra("post_title") ?: "")
+        binding.etContent.setText(intent.getStringExtra("post_content") ?: "")
+        binding.cbNotice.isChecked = intent.getBooleanExtra("post_is_notice", false)
     }
 
     private fun setupMarkdown() {
-        try {
-            // 마크다운 초기화
-            markwon = Markwon.create(this)
-            editor = MarkwonEditor.create(markwon)
+        markwon = Markwon.create(this)
+        editor = MarkwonEditor.create(markwon)
 
-            // 마크다운 에디터 적용
-            binding.etContent.addTextChangedListener(MarkwonEditorTextWatcher.withProcess(editor))
-        } catch (e: Exception) {
-            Log.e("WritePostActivity", "Markwon initialization failed", e)
-            // 마크다운 초기화 실패 시에도 기본 기능은 동작하도록 함
-        }
+        binding.etContent.addTextChangedListener(
+            MarkwonEditorTextWatcher.withPreRender(
+                editor, Executors.newCachedThreadPool(), binding.etContent
+            )
+        )
     }
 
     private fun setupUI() {
-        // 게시판 타입에 따른 UI 설정
-        val titleText = if (isEditMode) {
-            when (boardType) {
-                "notice" -> "$boardName - 공지 수정"
-                "tips" -> "$boardName - Tips 수정"
-                else -> "$boardName - 글 수정"
-            }
-        } else {
-            when (boardType) {
-                "notice" -> "$boardName - 공지 작성"
-                "tips" -> "$boardName - Tips 작성"
-                else -> "$boardName - 글쓰기"
-            }
-        }
-
-        binding.tvBoardName.text = titleText
-
-        // 공지 체크박스 표시 여부
-        binding.cbNotice.visibility = if (boardType == "notice") View.VISIBLE else View.GONE
-
-        // 완료 버튼 텍스트 변경
+        binding.tvBoardName.text = boardName
         binding.btnComplete.text = if (isEditMode) "수정" else "완료"
 
-        // 마크다운 도움말 추가
-        binding.etContent.hint = """내용을 입력하세요."""
+        // 공지 체크박스는 notice 게시판이나 관리자만 표시
+        if (boardType != "notice") {
+            binding.cbNotice.visibility = View.GONE
+        }
+
+        // 익명 체크박스는 일반 게시판에서만 표시
+        if (boardType == "notice") {
+            binding.cbAnonymous?.visibility = View.GONE
+        }
     }
 
     private fun setupListeners() {
         // 완료 버튼 클릭 리스너
         binding.btnComplete.setOnClickListener {
             if (validateInput()) {
-                if (isEditMode) {
-                    updatePost()
-                } else {
-                    createPost()
-                }
+                uploadFilesAndCreatePost()
             }
         }
 
@@ -120,9 +145,201 @@ class WritePostActivity : AppCompatActivity() {
             finish()
         }
 
-        // 파일 업로드 버튼 (추후 구현)
+        // 🆕 파일 업로드 버튼 - 실제 구현
         binding.btnUploadFile.setOnClickListener {
-            Toast.makeText(this, "파일 업로드 기능은 추후 구현 예정입니다", Toast.LENGTH_SHORT).show()
+            openFilePicker()
+        }
+    }
+
+    private fun setupFileRecyclerView() {
+        attachedFileAdapter = AttachedFileAdapter(
+            files = uploadedFiles,
+            onDeleteClick = { fileInfo ->
+                // 파일 삭제
+                uploadedFiles.remove(fileInfo)
+                attachedFileAdapter.notifyDataSetChanged()
+                updateFileVisibility()
+            },
+            onFileClick = { fileInfo ->
+                // 🆕 파일 클릭 시 다운로드/보기
+                handleFileClick(fileInfo)
+            }
+        )
+
+        binding.rvAttachedFiles.layoutManager = LinearLayoutManager(this)
+        binding.rvAttachedFiles.adapter = attachedFileAdapter
+        updateFileVisibility()
+    }
+
+    // 🆕 파일 클릭 처리 (다운로드/보기)
+    private fun handleFileClick(fileInfo: UploadedFileInfo) {
+        when {
+            fileInfo.contentType.startsWith("image/") -> {
+                // 이미지인 경우 이미지 뷰어로 보기
+                openImageViewer(fileInfo)
+            }
+            else -> {
+                // 다른 파일들은 다운로드
+                downloadFile(fileInfo)
+            }
+        }
+    }
+
+    // 🆕 이미지 뷰어 열기
+    private fun openImageViewer(fileInfo: UploadedFileInfo) {
+        val intent = Intent(this, ImageViewerActivity::class.java).apply {
+            putExtra("image_url", "${ApiClient.BASE_URL.trimEnd('/')}${fileInfo.fileUrl}")
+            putExtra("image_name", fileInfo.originalName)
+        }
+        startActivity(intent)
+    }
+
+    // 🆕 파일 다운로드
+    private fun downloadFile(fileInfo: UploadedFileInfo) {
+        try {
+            val downloadManager = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
+            val fileUrl = "${ApiClient.BASE_URL.trimEnd('/')}${fileInfo.fileUrl}"
+
+            val request = DownloadManager.Request(Uri.parse(fileUrl)).apply {
+                setTitle("파일 다운로드")
+                setDescription("${fileInfo.originalName} 다운로드 중...")
+                setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileInfo.originalName)
+                setAllowedOverMetered(true)
+                setAllowedOverRoaming(true)
+            }
+
+            downloadManager.enqueue(request)
+            Toast.makeText(this, "다운로드를 시작합니다", Toast.LENGTH_SHORT).show()
+
+        } catch (e: Exception) {
+            Log.e("WritePostActivity", "Download failed", e)
+            Toast.makeText(this, "다운로드에 실패했습니다", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun openFilePicker() {
+        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+            type = "*/*"
+            addCategory(Intent.CATEGORY_OPENABLE)
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+
+            // 파일 타입 제한
+            val mimeTypes = arrayOf(
+                "image/*",
+                "application/pdf",
+                "application/msword",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "application/vnd.ms-excel",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "text/plain"
+            )
+            putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes)
+        }
+
+        filePickerLauncher.launch(Intent.createChooser(intent, "파일 선택"))
+    }
+
+    private fun updateFileList() {
+        if (selectedFiles.isNotEmpty()) {
+            uploadSelectedFiles() // 메서드 이름 수정
+        }
+    }
+
+    private fun updateFileVisibility() {
+        binding.rvAttachedFiles.visibility = if (uploadedFiles.isNotEmpty()) View.VISIBLE else View.GONE
+    }
+
+    private fun uploadSelectedFiles() { // 메서드 이름 변경
+        lifecycleScope.launch {
+            try {
+                showLoading(true, "파일 업로드 중...")
+
+                val fileParts = mutableListOf<MultipartBody.Part>()
+
+                selectedFiles.forEach { uri ->
+                    val file = createTempFileFromUri(uri)
+                    if (file != null) {
+                        val requestFile = file.asRequestBody(getContentType(uri).toMediaTypeOrNull())
+                        val filePart = MultipartBody.Part.createFormData("files", file.name, requestFile)
+                        fileParts.add(filePart)
+                    }
+                }
+
+                val response = ApiClient.apiService.uploadFiles(fileParts)
+
+                if (response.isSuccessful && response.body()?.success == true) {
+                    val newFiles = response.body()?.files ?: emptyList()
+                    uploadedFiles.addAll(newFiles)
+                    attachedFileAdapter.notifyDataSetChanged()
+                    updateFileVisibility()
+
+                    selectedFiles.clear()
+                    Toast.makeText(this@WritePostActivity, "${newFiles.size}개 파일 업로드 완료", Toast.LENGTH_SHORT).show()
+                } else {
+                    val errorMessage = response.body()?.message ?: "파일 업로드에 실패했습니다"
+                    Toast.makeText(this@WritePostActivity, errorMessage, Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Log.e("WritePostActivity", "Error uploading files", e)
+                Toast.makeText(this@WritePostActivity, "파일 업로드 중 오류가 발생했습니다", Toast.LENGTH_SHORT).show()
+            } finally {
+                showLoading(false)
+            }
+        }
+    }
+
+    private fun createTempFileFromUri(uri: Uri): File? {
+        return try {
+            val inputStream = contentResolver.openInputStream(uri)
+            val fileName = getFileName(uri)
+            val tempFile = File(cacheDir, fileName)
+
+            FileOutputStream(tempFile).use { output ->
+                inputStream?.copyTo(output)
+            }
+
+            tempFile
+        } catch (e: Exception) {
+            Log.e("WritePostActivity", "Error creating temp file", e)
+            null
+        }
+    }
+
+    private fun getFileName(uri: Uri): String {
+        var fileName = "file"
+        contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (cursor.moveToFirst() && nameIndex >= 0) {
+                fileName = cursor.getString(nameIndex)
+            }
+        }
+        return fileName
+    }
+
+    private fun getContentType(uri: Uri): String {
+        return contentResolver.getType(uri) ?: "application/octet-stream"
+    }
+
+    private fun uploadFilesAndCreatePost() {
+        if (selectedFiles.isNotEmpty()) {
+            // 선택된 파일이 있으면 먼저 업로드
+            lifecycleScope.launch {
+                uploadFiles()
+                // 업로드 완료 후 게시글 작성/수정
+                if (isEditMode) {
+                    updatePost()
+                } else {
+                    createPost()
+                }
+            }
+        } else {
+            // 파일이 없으면 바로 게시글 작성/수정
+            if (isEditMode) {
+                updatePost()
+            } else {
+                createPost()
+            }
         }
     }
 
@@ -167,18 +384,21 @@ class WritePostActivity : AppCompatActivity() {
             return
         }
 
+        // 🆕 업로드된 파일 URL들을 첨부
+        val attachments = uploadedFiles.map { it.fileUrl }
+
         val request = CreatePostRequest(
             boardId = boardId,
             title = title,
             content = content,
             isAnonymous = isAnonymous,
             isNotice = isNotice,
-            attachments = null // 추후 파일 업로드 구현
+            attachments = attachments
         )
 
         lifecycleScope.launch {
             try {
-                showLoading(true)
+                showLoading(true, "게시글 작성 중...")
 
                 val response = ApiClient.apiService.createPost(request)
 
@@ -212,17 +432,20 @@ class WritePostActivity : AppCompatActivity() {
             return
         }
 
+        // 🆕 업로드된 파일 URL들을 첨부
+        val attachments = uploadedFiles.map { it.fileUrl }
+
         val request = UpdatePostRequest(
             boardId = boardId,
             title = title,
             content = content,
             isNotice = isNotice,
-            attachments = null // 추후 파일 업로드 구현
+            attachments = attachments
         )
 
         lifecycleScope.launch {
             try {
-                showLoading(true)
+                showLoading(true, "게시글 수정 중...")
 
                 val response = ApiClient.apiService.updatePost(postId, request)
 
@@ -245,10 +468,12 @@ class WritePostActivity : AppCompatActivity() {
         }
     }
 
-    private fun showLoading(isLoading: Boolean) {
+    private fun showLoading(isLoading: Boolean, message: String = "") {
         if (isLoading) {
             binding.btnComplete.isEnabled = false
-            binding.btnComplete.text = if (isEditMode) "수정 중..." else "작성 중..."
+            binding.btnComplete.text = message.ifEmpty {
+                if (isEditMode) "수정 중..." else "작성 중..."
+            }
         } else {
             binding.btnComplete.isEnabled = true
             binding.btnComplete.text = if (isEditMode) "수정" else "완료"
