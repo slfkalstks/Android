@@ -1,4 +1,3 @@
-// 업데이트된 SearchResultAdapter.kt
 package kc.ac.uc.clubplatform.adapters
 
 import android.view.LayoutInflater
@@ -55,6 +54,7 @@ class SearchResultAdapter(
             }
         }
 
+        // 검색 결과용 날짜 포맷팅 (yyyy-MM-dd) - 기존 유지
         private fun formatDate(dateString: String): String {
             return try {
                 val inputFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())

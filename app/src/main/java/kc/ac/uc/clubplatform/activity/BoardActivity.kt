@@ -266,17 +266,7 @@ class BoardActivity : AppCompatActivity() {
     private fun loadPostList() {
         lifecycleScope.launch {
             try {
-                when (boardType) {
-                    "best" -> loadBestPosts()
-                    "hot" -> loadHotPosts()
-                    else -> {
-                        if (boardId != null) {
-                            loadBoardPosts(boardId!!)
-                        } else {
-                            loadBoardsAndPosts()
-                        }
-                    }
-                }
+                loadBoardsAndPosts()
             } catch (e: Exception) {
                 Log.e("BoardActivity", "Error loading posts", e)
                 showToast("게시글을 불러오는 중 오류가 발생했습니다: ${e.message}")
@@ -330,8 +320,6 @@ class BoardActivity : AppCompatActivity() {
             boardName = when (boardType) {
                 "notice" -> "공지사항"
                 "tips" -> "Tips"
-                "hot" -> "HOT 게시판"
-                "best" -> "BEST 게시판"
                 "general" -> "자유게시판"
                 else -> "게시판"
             }
@@ -354,35 +342,6 @@ class BoardActivity : AppCompatActivity() {
         }
     }
 
-    private suspend fun loadBestPosts() {
-        try {
-            val response = ApiClient.apiService.getBestPosts()
-            if (response.isSuccessful) {
-                val postList = response.body()?.posts ?: emptyList()
-                updatePostList(postList)
-            } else {
-                showToast("BEST 게시글을 불러올 수 없습니다")
-            }
-        } catch (e: Exception) {
-            Log.e("BoardActivity", "Error loading best posts", e)
-            showToast("BEST 게시글을 불러오는 중 오류가 발생했습니다")
-        }
-    }
-
-    private suspend fun loadHotPosts() {
-        try {
-            val response = ApiClient.apiService.getHotPosts()
-            if (response.isSuccessful) {
-                val postList = response.body()?.posts ?: emptyList()
-                updatePostList(postList)
-            } else {
-                showToast("HOT 게시글을 불러올 수 없습니다")
-            }
-        } catch (e: Exception) {
-            Log.e("BoardActivity", "Error loading hot posts", e)
-            showToast("HOT 게시글을 불러오는 중 오류가 발생했습니다")
-        }
-    }
 
     private fun updatePostList(postList: List<PostInfo>) {
         posts.clear()
@@ -615,7 +574,6 @@ class BoardActivity : AppCompatActivity() {
         binding.tvPostTitle.text = post.title
         binding.tvPostAuthor.text = if (post.isAnonymous) "익명" else post.authorName
 
-        // 🔧 날짜 형식을 HomeFragment와 동일하게 변경 (yy:MM:dd HHmm)
         binding.tvPostDate.text = DateUtils.formatHomeDate(post.createdAt)
 
         // 마크다운 렌더링
@@ -823,17 +781,6 @@ class BoardActivity : AppCompatActivity() {
             binding.btnScrap.setTextColor(ContextCompat.getColor(this, R.color.dark_gray))
             binding.btnScrap.setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_bookmark_border, 0, 0, 0)
             binding.btnScrap.text = "스크랩"
-        }
-    }
-
-    private fun formatDate(dateString: String): String {
-        return try {
-            val inputFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
-            val outputFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-            val date = inputFormat.parse(dateString)
-            date?.let { outputFormat.format(it) } ?: dateString
-        } catch (e: Exception) {
-            dateString
         }
     }
 

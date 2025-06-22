@@ -1,4 +1,3 @@
-// 업데이트된 PostAdapter.kt
 package kc.ac.uc.clubplatform.adapters
 
 import android.view.LayoutInflater
@@ -47,6 +46,7 @@ class PostAdapter(
 
             binding.tvContent.text = plainContent
             binding.tvAuthor.text = post.authorName
+            // 기존 formatDate() 유지 (MM-dd 형식)
             binding.tvDate.text = formatDate(post.createdAt)
             binding.tvCommentCount.text = post.commentCount.toString()
             binding.tvViewCount.text = post.viewCount.toString()
@@ -65,10 +65,11 @@ class PostAdapter(
             }
         }
 
+        // 게시글 목록용 날짜 포맷팅
         private fun formatDate(dateString: String): String {
             return try {
                 val inputFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
-                val outputFormat = SimpleDateFormat("MM-dd", Locale.getDefault())
+                val outputFormat = SimpleDateFormat("yy-MM-dd", Locale.getDefault())
                 val date = inputFormat.parse(dateString)
                 date?.let { outputFormat.format(it) } ?: dateString
             } catch (e: Exception) {
