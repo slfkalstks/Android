@@ -6,6 +6,7 @@ import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import kc.ac.uc.clubplatform.databinding.ItemCommentBinding
 import kc.ac.uc.clubplatform.models.CommentInfo
+import kc.ac.uc.clubplatform.util.DateUtils
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -22,7 +23,7 @@ class CommentAdapter(
         fun bind(comment: CommentInfo) {
             binding.tvCommentAuthor.text = if (comment.isAnonymous) "익명" else comment.authorName
             binding.tvCommentContent.text = comment.content
-            binding.tvCommentDate.text = formatDate(comment.createdAt)
+            binding.tvCommentDate.text = DateUtils.formatRelativeTime(comment.createdAt)
             binding.tvCommentLikeCount.text = comment.likeCount.toString()
 
             // 좋아요 버튼 상태

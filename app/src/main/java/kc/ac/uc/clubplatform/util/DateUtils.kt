@@ -53,19 +53,6 @@ object DateUtils {
     }
 
     /**
-     * 게시글 목록용 날짜 포맷팅 (MM.dd)
-     */
-    fun formatPostListDate(dateString: String?): String {
-        val date = parseServerDate(dateString)
-        return if (date != null) {
-            val formatter = SimpleDateFormat("MM.dd", Locale.getDefault())
-            formatter.format(date)
-        } else {
-            dateString ?: "--"
-        }
-    }
-
-    /**
      * 상대적 시간 포맷팅 (방금 전, 5분 전, 2시간 전, 3일 전 등)
      */
     fun formatRelativeTime(dateString: String?): String {
@@ -89,18 +76,10 @@ object DateUtils {
     fun formatHomeDate(dateString: String?): String {
         val date = parseServerDate(dateString)
         return if (date != null) {
-            val formatter = SimpleDateFormat("yy:MM:dd HHmm", Locale.getDefault())
+            val formatter = SimpleDateFormat("yy-MM-dd HH : mm", Locale.getDefault())
             formatter.format(date)
         } else {
             dateString ?: "날짜 없음"
         }
-    }
-
-    /**
-     * 현재 시간을 서버 전송용 포맷으로 변환
-     */
-    fun getCurrentServerTime(): String {
-        val formatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
-        return formatter.format(Date())
     }
 }
